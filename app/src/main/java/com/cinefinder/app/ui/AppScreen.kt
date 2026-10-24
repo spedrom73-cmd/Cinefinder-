@@ -1,4 +1,4 @@
-package com.cinefinder.app.ui
+Package com.cinefinder.app.ui
 
 import android.content.Context
 import android.content.Intent
@@ -524,4 +524,7 @@ fun MovieDetail(
     onWant: () -> Unit,
     onSeen: () -> Unit,
     onOpen: (Movie) -> Unit,
-    
+    onBack: () -> Unit
+) {
+    // Corpo da função (fechado corretamente)
+}
