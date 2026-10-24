@@ -1,0 +1,29 @@
+CineFinder 🎬
+
+O CineFinder é uma aplicação Android desenvolvida para identificar filmes e séries a partir de vídeos, utilizando visão computacional e inteligência artificial.
+
+Objetivo
+
+Permitir que os utilizadores descubram o nome de filmes e séries através de pequenos trechos de vídeo.
+
+Funcionalidades planeadas
+
+- Selecionar vídeos da galeria do telemóvel.
+- Analisar imagens extraídas dos vídeos.
+- Procurar correspondências com filmes e séries.
+- Apresentar possíveis resultados de identificação.
+
+Tecnologias previstas
+
+- Android
+- Python
+- Inteligência Artificial
+- Visão Computacional
+
+Estado do projeto
+
+Em desenvolvimento.
+
+Criador
+
+Spedrom73-cmd
