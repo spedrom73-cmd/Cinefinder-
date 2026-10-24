@@ -31,6 +31,8 @@ data class Extras(
     val providers: List<String>
 )
 
+class ApiException(val code: Int, message: String) : Exception(message)
+
 class Keys(context: Context) {
     private val prefs = context.getSharedPreferences("cinefinder_keys", Context.MODE_PRIVATE)
     var gemini: String
@@ -42,8 +44,9 @@ class Keys(context: Context) {
 }
 
 object Api {
+    var language: String = "pt-PT"
     private const val IMG = "https://image.tmdb.org/t/p/"
-    private const val MODEL = "gemini-3.8-flash"
+    private val MODELS = listOf("gemini-3.8-flash", "gemini-flash-latest", "gemini-flash-lite-latest")
 
     private fun request(url: String, body: String? = null, headers: Map<String, String> = emptyMap()): String {
         val conn = URL(url).openConnection() as HttpURLConnection
@@ -60,7 +63,7 @@ object Api {
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
-            if (code !in 200..299) throw Exception("Erro " + code + ": " + text.take(200))
+            if (code !in 200..299) throw ApiException(code, "Erro " + code + ": " + text.take(200))
             return text
         } finally {
             conn.disconnect()
@@ -90,15 +93,16 @@ object Api {
     }
 
     suspend fun list(tmdbKey: String, path: String): List<Movie> = withContext(Dispatchers.IO) {
-        val isTv = path.startsWith("tv")
-        val json = JSONObject(request("https://api.themoviedb.org/3/" + path + "?language=pt-PT&api_key=" + tmdbKey))
+        val isTv = path.contains("tv")
+        val sep = if (path.contains("?")) "&" else "?"
+        val json = JSONObject(request("https://api.themoviedb.org/3/" + path + sep + "language=" + language + "&api_key=" + tmdbKey))
         val arr = json.optJSONArray("results") ?: JSONArray()
         (0 until arr.length()).mapNotNull { parseMovie(arr.getJSONObject(it), isTv) }
     }
 
     suspend fun search(tmdbKey: String, query: String): List<Movie> = withContext(Dispatchers.IO) {
         val q = URLEncoder.encode(query, "UTF-8")
-        val json = JSONObject(request("https://api.themoviedb.org/3/search/multi?language=pt-PT&query=" + q + "&api_key=" + tmdbKey))
+        val json = JSONObject(request("https://api.themoviedb.org/3/search/multi?language=" + language + "&query=" + q + "&api_key=" + tmdbKey))
         val arr = json.optJSONArray("results") ?: JSONArray()
         (0 until arr.length()).mapNotNull { parseMovie(arr.getJSONObject(it)) }
     }
@@ -149,6 +153,38 @@ object Api {
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 
+    private fun friendly(code: Int): String = when (code) {
+        429 -> "Chegaste ao limite grátis da IA por agora. Tenta daqui a uns minutos ou amanhã."
+        500, 503, 504 -> "A IA da Google está ocupada. Tenta outra vez daqui a pouco."
+        400, 401, 403 -> "A chave da Gemini não está certa. Confirma-a nas Definições."
+        404 -> "O modelo de IA mudou. É preciso atualizar o app."
+        else -> "A IA devolveu o erro " + code + "."
+    }
+
+    private fun askGemini(body: String, key: String, onProgress: (Float, String) -> Unit): String {
+        var lastError: Exception? = null
+        for (model in MODELS) {
+            for (attempt in 1..3) {
+                try {
+                    return request(
+                        "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+                        body,
+                        mapOf("x-goog-api-key" to key)
+                    )
+                } catch (e: ApiException) {
+                    lastError = e
+                    if (e.code == 401 || e.code == 403) throw e
+                    if (e.code == 400 && (e.message ?: "").contains("API key")) throw e
+                    val canRetry = e.code == 429 || e.code == 500 || e.code == 503 || e.code == 504
+                    if (!canRetry) break
+                    onProgress(0.7f, "A IA está ocupada. A tentar outra vez (" + attempt + " de 3)...")
+                    Thread.sleep(attempt * 3000L)
+                }
+            }
+        }
+        throw lastError ?: Exception("A IA não respondeu.")
+    }
+
     suspend fun identify(
         context: Context,
         uri: Uri,
@@ -177,7 +213,7 @@ object Api {
 
         onProgress(0.6f, "A perguntar à IA...")
         val parts = JSONArray()
-        parts.put(JSONObject().put("text", "Estas imagens são fotogramas de um mesmo vídeo curto de um filme ou série. Diz-me quais são os 3 títulos mais prováveis, do mais provável para o menos provável. Responde APENAS com JSON no formato {\"titles\":[\"Título 1\",\"Título 2\",\"Título 3\"]}, usando o título original ou o mais conhecido. Se não fizeres ideia, responde {\"titles\":[]}."))
+        parts.put(JSONObject().put("text", "Estas imagens são fotogramas de um mesmo vídeo curto de um filme, série ou anime. Diz-me quais são os 3 títulos mais prováveis, do mais provável para o menos provável. Responde APENAS com JSON no formato {\"titles\":[\"Título 1\",\"Título 2\",\"Título 3\"]}, usando o título original ou o mais conhecido. Se não fizeres ideia, responde {\"titles\":[]}."))
         frames.forEach { f ->
             parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", f)))
         }
@@ -185,11 +221,11 @@ object Api {
             .put("contents", JSONArray().put(JSONObject().put("parts", parts)))
             .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
             .toString()
-        val resp = request(
-            "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent",
-            body,
-            mapOf("x-goog-api-key" to geminiKey)
-        )
+        val resp = try {
+            askGemini(body, geminiKey, onProgress)
+        } catch (e: ApiException) {
+            throw Exception(friendly(e.code))
+        }
         val text = JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
             .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
         val clean = text.trim().removePrefix("```json").removeSuffix("```").trim()
