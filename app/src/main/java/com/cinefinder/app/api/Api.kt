@@ -43,6 +43,7 @@ class Keys(context: Context) {
 
 object Api {
     private const val IMG = "https://image.tmdb.org/t/p/"
+    private const val MODEL = "gemini-3.8-flash"
 
     private fun request(url: String, body: String? = null, headers: Map<String, String> = emptyMap()): String {
         val conn = URL(url).openConnection() as HttpURLConnection
@@ -185,7 +186,7 @@ object Api {
             .put("generationConfig", JSONObject().put("responseMimeType", "application/json"))
             .toString()
         val resp = request(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+            "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent",
             body,
             mapOf("x-goog-api-key" to geminiKey)
         )
