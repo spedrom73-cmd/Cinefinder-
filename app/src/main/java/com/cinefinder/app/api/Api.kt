@@ -10,6 +10,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -51,14 +52,16 @@ object Api {
     private fun request(url: String, body: String? = null, headers: Map<String, String> = emptyMap()): String {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
-            conn.connectTimeout = 20000
-            conn.readTimeout = 60000
+            conn.connectTimeout = 15000
+            conn.readTimeout = 45000
             headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
             if (body != null) {
+                val bytes = body.toByteArray()
                 conn.requestMethod = "POST"
                 conn.doOutput = true
+                conn.setFixedLengthStreamingMode(bytes.size)
                 conn.setRequestProperty("Content-Type", "application/json")
-                conn.outputStream.use { it.write(body.toByteArray()) }
+                conn.outputStream.use { it.write(bytes) }
             }
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
@@ -144,12 +147,12 @@ object Api {
     }
 
     private fun toBase64(bmp: Bitmap): String {
-        val ratio = 768f / maxOf(bmp.width, bmp.height)
+        val ratio = 512f / maxOf(bmp.width, bmp.height)
         val scaled = if (ratio < 1f) {
             Bitmap.createScaledBitmap(bmp, (bmp.width * ratio).toInt(), (bmp.height * ratio).toInt(), true)
         } else bmp
         val out = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
+        scaled.compress(Bitmap.CompressFormat.JPEG, 70, out)
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 
@@ -162,9 +165,13 @@ object Api {
     }
 
     private fun askGemini(body: String, key: String, onProgress: (Float, String) -> Unit): String {
+        val started = System.currentTimeMillis()
         var lastError: Exception? = null
         for (model in MODELS) {
             for (attempt in 1..3) {
+                if (System.currentTimeMillis() - started > 150000L) {
+                    throw Exception("A IA demorou demasiado a responder. Verifica a ligação e tenta outra vez.")
+                }
                 try {
                     return request(
                         "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
@@ -179,10 +186,16 @@ object Api {
                     if (!canRetry) break
                     onProgress(0.7f, "A IA está ocupada. A tentar outra vez (" + attempt + " de 3)...")
                     Thread.sleep(attempt * 3000L)
+                } catch (e: IOException) {
+                    lastError = e
+                    onProgress(0.7f, "A ligação está lenta. A tentar outra vez...")
+                    if (attempt >= 2) break
                 }
             }
         }
-        throw lastError ?: Exception("A IA não respondeu.")
+        val err = lastError
+        if (err is ApiException) throw err
+        throw Exception("Não consegui falar com a IA. Verifica a ligação e tenta outra vez.")
     }
 
     suspend fun identify(
@@ -199,7 +212,7 @@ object Api {
             } ?: throw Exception("Não consegui abrir o vídeo.")
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
             if (durationMs <= 0L) throw Exception("Vídeo inválido.")
-            val n = 6
+            val n = 5
             for (i in 1..n) {
                 val timeUs = durationMs * 1000L * i / (n + 1)
                 val bmp = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
@@ -211,7 +224,7 @@ object Api {
         }
         if (frames.isEmpty()) throw Exception("Não consegui ler imagens do vídeo.")
 
-        onProgress(0.6f, "A perguntar à IA...")
+        onProgress(0.6f, "A enviar para a IA...")
         val parts = JSONArray()
         parts.put(JSONObject().put("text", "Estas imagens são fotogramas de um mesmo vídeo curto de um filme, série ou anime. Diz-me quais são os 3 títulos mais prováveis, do mais provável para o menos provável. Responde APENAS com JSON no formato {\"titles\":[\"Título 1\",\"Título 2\",\"Título 3\"]}, usando o título original ou o mais conhecido. Se não fizeres ideia, responde {\"titles\":[]}."))
         frames.forEach { f ->
