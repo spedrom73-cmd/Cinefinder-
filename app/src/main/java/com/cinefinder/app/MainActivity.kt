@@ -7,6 +7,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.cinefinder.app.ui.CineFinderApp
+import com.cinefinder.app.ui.CrashLog
 import com.cinefinder.app.ui.Incoming
 import com.cinefinder.app.ui.theme.CineFinderTheme
 
@@ -21,6 +22,7 @@ private fun streamUri(i: Intent): Uri? =
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
         val i = intent
         if (i != null && i.action == Intent.ACTION_SEND) {
             val uri = streamUri(i)
