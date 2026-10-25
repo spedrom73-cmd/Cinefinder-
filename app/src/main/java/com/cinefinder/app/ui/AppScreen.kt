@@ -1,4 +1,4 @@
-Package com.cinefinder.app.ui
+package com.cinefinder.app.ui
 
 import android.content.Context
 import android.content.Intent
