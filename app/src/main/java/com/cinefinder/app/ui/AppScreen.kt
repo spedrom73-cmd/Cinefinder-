@@ -3,6 +3,7 @@ package com.cinefinder.app.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,6 +44,8 @@ import com.cinefinder.app.api.Favorites
 import com.cinefinder.app.api.Keys
 import com.cinefinder.app.api.Library
 import com.cinefinder.app.api.Movie
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -51,6 +54,32 @@ private val ADark = Color(0xFF141414)
 
 object Incoming {
     var uri: Uri? by mutableStateOf(null)
+}
+
+object CrashLog {
+    private const val FILE = "cinefinder_crash"
+
+    fun install(context: Context) {
+        val app = context.applicationContext
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                val sw = java.io.StringWriter()
+                e.printStackTrace(java.io.PrintWriter(sw))
+                app.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+                    .edit().putString("last", sw.toString().take(2500)).commit()
+            } catch (x: Exception) {
+            }
+            previous?.uncaughtException(t, e)
+        }
+    }
+
+    fun read(context: Context): String? {
+        val p = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val s = p.getString("last", null)
+        if (s != null) p.edit().remove("last").apply()
+        return s
+    }
 }
 
 private fun shareMovie(context: Context, m: Movie) {
@@ -97,12 +126,18 @@ fun CineFinderApp() {
     var history by remember { mutableStateOf(lib.get("history")) }
     var lang by remember { mutableStateOf(settings.language) }
     var textScale by remember { mutableFloatStateOf(settings.textScale) }
+    var crash by remember { mutableStateOf(CrashLog.read(context)) }
     val incoming = Incoming.uri
+
+    val openMovie: (Movie) -> Unit = { m ->
+        Toast.makeText(context, m.title, Toast.LENGTH_SHORT).show()
+        selected = m
+    }
 
     Api.language = lang
 
     LaunchedEffect(Unit) {
-        delay(1800)
+        delay(900)
         splash = false
         if (keys.tmdb.isBlank() && Incoming.uri == null) showSettings = true
     }
@@ -166,15 +201,15 @@ fun CineFinderApp() {
                     ) { padding ->
                         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
                             when (tab) {
-                                0 -> HomePlus(tmdbKey, { selected = it }, { showSettings = true })
-                                1 -> ExploreTab(tmdbKey) { selected = it }
+                                0 -> HomePlus(tmdbKey, openMovie, { showSettings = true })
+                                1 -> ExploreTab(tmdbKey, openMovie)
                                 2 -> IdentifyScreen(
                                     geminiKey = geminiKey,
                                     tmdbKey = tmdbKey,
                                     incoming = incoming,
                                     onConsumed = { Incoming.uri = null },
                                     onFound = { history = lib.push("history", it, 40) },
-                                    onOpen = { selected = it }
+                                    onOpen = openMovie
                                 )
                                 else -> LibraryTab(
                                     favs = favList,
@@ -201,7 +236,7 @@ fun CineFinderApp() {
                                             }
                                         }
                                     },
-                                    onOpen = { selected = it }
+                                    onOpen = openMovie
                                 )
                             }
                         }
@@ -238,8 +273,24 @@ fun CineFinderApp() {
                         onFav = { favList = favs.toggle(m) },
                         onWant = { wantList = lib.toggle("want", m) },
                         onSeen = { seenList = lib.toggle("seen", m) },
-                        onOpen = { selected = it },
+                        onOpen = openMovie,
                         onBack = { selected = null }
+                    )
+                }
+                crash?.let { text ->
+                    AlertDialog(
+                        onDismissRequest = { crash = null },
+                        confirmButton = {
+                            TextButton(onClick = { crash = null }) { Text("Fechar") }
+                        },
+                        title = { Text("O app fechou antes") },
+                        text = {
+                            Column(
+                                modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())
+                            ) {
+                                Text(text.take(1800), fontSize = 10.sp)
+                            }
+                        }
                     )
                 }
             }
@@ -297,6 +348,7 @@ fun IdentifyScreen(
     var found by remember { mutableStateOf<List<Movie>>(emptyList()) }
     var done by remember { mutableStateOf(false) }
     var description by remember { mutableStateOf("") }
+    var job by remember { mutableStateOf<Job?>(null) }
 
     fun begin(): Boolean {
         if (geminiKey.isBlank() || tmdbKey.isBlank()) {
@@ -313,7 +365,7 @@ fun IdentifyScreen(
 
     fun startVideo(uri: Uri) {
         if (!begin()) return
-        scope.launch {
+        job = scope.launch {
             try {
                 val titles = Api.identify(context, uri, geminiKey) { p, s ->
                     progress = p
@@ -326,6 +378,8 @@ fun IdentifyScreen(
                 found = list
                 done = true
                 if (list.isNotEmpty()) onFound(list)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 error = "Erro: " + (e.message ?: "falhou")
             }
@@ -336,7 +390,7 @@ fun IdentifyScreen(
     fun startDescribe() {
         if (description.isBlank()) return
         if (!begin()) return
-        scope.launch {
+        job = scope.launch {
             try {
                 status = "A perguntar à IA..."
                 progress = 0.5f
@@ -348,6 +402,8 @@ fun IdentifyScreen(
                 found = list
                 done = true
                 if (list.isNotEmpty()) onFound(list)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 error = "Erro: " + (e.message ?: "falhou")
             }
@@ -413,6 +469,17 @@ fun IdentifyScreen(
             Text(status)
             Spacer(modifier = Modifier.height(8.dp))
             LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = {
+                    job?.cancel()
+                    busy = false
+                    status = ""
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Cancelar")
+            }
         }
         error?.let {
             Spacer(modifier = Modifier.height(12.dp))
@@ -493,23 +560,20 @@ fun LibraryTab(
 }
 
 @Composable
-private fun ListButton(label: String, on: Boolean, onClick: () -> Unit, modifier: Modifier) {
-    if (on) {
-        Button(
-            onClick = onClick,
-            modifier = modifier.height(48.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("✓ " + label)
-        }
-    } else {
-        OutlinedButton(
-            onClick = onClick,
-            modifier = modifier.height(48.dp),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("+ " + label)
-        }
+private fun SimilarRow(movies: List<Movie>, onOpen: (Movie) -> Unit) {
+    if (movies.isEmpty()) return
+    Text(
+        "Filmes parecidos",
+        fontSize = 20.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 8.dp)
+    )
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().height(230.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        items(movies) { m -> Poster(m, onOpen) }
     }
 }
 
@@ -526,5 +590,114 @@ fun MovieDetail(
     onOpen: (Movie) -> Unit,
     onBack: () -> Unit
 ) {
-    // Corpo da função (fechado corretamente)
+    val context = LocalContext.current
+    var extras by remember(movie.id) { mutableStateOf<Extras?>(null) }
+    var similar by remember(movie.id) { mutableStateOf<List<Movie>>(emptyList()) }
+    var loaded by remember(movie.id) { mutableStateOf(false) }
+
+    LaunchedEffect(movie.id, movie.isTv) {
+        extras = try {
+            Api.extras(tmdbKey, movie)
+        } catch (e: Exception) {
+            null
+        }
+        loaded = true
+        similar = try {
+            Api2.similar(tmdbKey, movie)
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Box(modifier = Modifier.fillMaxWidth().height(260.dp)) {
+                AsyncImage(
+                    model = movie.backdropUrl ?: movie.posterUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    modifier = Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(listOf(Color(0x66000000), Color.Transparent, ADark))
+                    )
+                )
+                IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Voltar", tint = Color.White)
+                }
+                Row(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                    IconButton(onClick = { shareMovie(context, movie) }) {
+                        Icon(Icons.Default.Share, contentDescription = "Partilhar", tint = Color.White)
+                    }
+                    IconButton(onClick = onFav) {
+                        Icon(
+                            if (isFav) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = "Favorito",
+                            tint = if (isFav) Color(0xFFE50914) else Color.White
+                        )
+                    }
+                }
+            }
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(movie.title, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                Text(subtitle(movie), color = AGrey, modifier = Modifier.padding(top = 4.dp))
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (isWant) {
+                        Button(onClick = onWant, modifier = Modifier.weight(1f)) { Text("✓ Quero ver") }
+                    } else {
+                        OutlinedButton(onClick = onWant, modifier = Modifier.weight(1f)) { Text("+ Quero ver") }
+                    }
+                    if (isSeen) {
+                        Button(onClick = onSeen, modifier = Modifier.weight(1f)) { Text("✓ Já vi") }
+                    } else {
+                        OutlinedButton(onClick = onSeen, modifier = Modifier.weight(1f)) { Text("+ Já vi") }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                if (movie.overview.isNotBlank()) {
+                    Text(movie.overview, color = Color(0xFFDDDDDD))
+                }
+                Spacer(modifier = Modifier.height(20.dp))
+                val e = extras
+                if (!loaded) {
+                    CircularProgressIndicator()
+                } else if (e != null) {
+                    if (e.trailerUrl != null) {
+                        Button(
+                            onClick = { openLink(context, e.trailerUrl) },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                        ) {
+                            Text("▶  Ver trailer", fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+                    if (e.whereLink != null) {
+                        OutlinedButton(
+                            onClick = { openLink(context, e.whereLink) },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                        ) {
+                            Text("Onde assistir")
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+                    if (e.providers.isNotEmpty()) {
+                        Text("Disponível em: " + e.providers.joinToString(", "), color = AGrey)
+                    } else {
+                        Text("Não encontrei serviços para este título na tua região.", color = AGrey)
+                    }
+                } else {
+                    Text("Não consegui carregar o trailer e os serviços.", color = AGrey)
+                }
+            }
+            SimilarRow(similar, onOpen)
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
 }
