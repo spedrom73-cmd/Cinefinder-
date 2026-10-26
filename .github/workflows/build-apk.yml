@@ -1,20 +1,637 @@
-name: Build CineFinder APK
+name: Compilar CineFinder APK
+
 on:
+  push:
+    branches: [ "main", "master" ]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.6
-      - run: gradle assembleDebug --stacktrace
-      - uses: actions/upload-artifact@v4
-        with:
-          name: CineFinder-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+    - name: Configurar Java JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Criar Projeto CineFinder
+      run: |
+        mkdir -p gradle/wrapper
+        mkdir -p app/src/main/res/values app/src/main/res/drawable app/src/main/res/mipmap-anydpi-v26
+        mkdir -p app/src/main/java/com/cinefinder/app/model
+        mkdir -p app/src/main/java/com/cinefinder/app/processing
+        mkdir -p app/src/main/java/com/cinefinder/app/ui/theme
+
+        cat << 'EOF' > settings.gradle.kts
+        pluginManagement {
+            repositories {
+                google()
+                mavenCentral()
+                gradlePluginPortal()
+            }
+        }
+        dependencyResolutionManagement {
+            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositories {
+                google()
+                mavenCentral()
+            }
+        }
+        rootProject.name = "CineFinder"
+        include(":app")
+        EOF
+
+        cat << 'EOF' > build.gradle.kts
+        plugins {
+            id("com.android.application") version "8.4.1" apply false
+            id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+        }
+        EOF
+
+        cat << 'EOF' > gradle.properties
+        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+        android.useAndroidX=true
+        android.nonTransitiveRClass=true
+        EOF
+
+        cat << 'EOF' > gradle/wrapper/gradle-wrapper.properties
+        distributionBase=GRADLE_USER_HOME
+        distributionPath=wrapper/dists
+        distributionUrl=https\://services.gradle.org/distributions/gradle-8.6-bin.zip
+        networkTimeout=10000
+        validateDistributionUrl=true
+        zipStoreBase=GRADLE_USER_HOME
+        zipStorePath=wrapper/dists
+        EOF
+
+        cat << 'EOF' > app/build.gradle.kts
+        plugins {
+            id("com.android.application")
+            id("org.jetbrains.kotlin.android")
+        }
+
+        android {
+            namespace = "com.cinefinder.app"
+            compileSdk = 34
+
+            defaultConfig {
+                applicationId = "com.cinefinder.app"
+                minSdk = 24
+                targetSdk = 34
+                versionCode = 1
+                versionName = "1.0.0"
+
+                testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+                vectorDrawables {
+                    useSupportLibrary = true
+                }
+            }
+
+            compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_17
+                targetCompatibility = JavaVersion.VERSION_17
+            }
+
+            kotlinOptions {
+                jvmTarget = "17"
+            }
+
+            buildFeatures {
+                compose = true
+            }
+
+            composeOptions {
+                kotlinCompilerExtensionVersion = "1.5.14"
+            }
+        }
+
+        dependencies {
+            implementation("androidx.core:core-ktx:1.13.1")
+            implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.0")
+            implementation("androidx.activity:activity-compose:1.9.0")
+            implementation(platform("androidx.compose:compose-bom:2024.05.00"))
+            implementation("androidx.compose.ui:ui")
+            implementation("androidx.compose.ui:ui-graphics")
+            implementation("androidx.compose.ui:ui-tooling-preview")
+            implementation("androidx.compose.material3:material3")
+            implementation("androidx.compose.material:material-icons-extended")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+            <application
+                android:allowBackup="true"
+                android:icon="@mipmap/ic_launcher"
+                android:label="@string/app_name"
+                android:roundIcon="@mipmap/ic_launcher"
+                android:supportsRtl="true"
+                android:theme="@android:style/Theme.Material.NoActionBar">
+                <activity
+                    android:name=".MainActivity"
+                    android:exported="true">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+            </application>
+        </manifest>
+        EOF
+
+        cat << 'EOF' > app/src/main/res/values/strings.xml
+        <resources>
+            <string name="app_name">CineFinder</string>
+        </resources>
+        EOF
+
+        cat << 'EOF' > app/src/main/res/drawable/ic_launcher_foreground.xml
+        <vector xmlns:android="http://schemas.android.com/apk/res/android"
+            android:width="108dp"
+            android:height="108dp"
+            android:viewportWidth="108"
+            android:viewportHeight="108">
+            <path android:fillColor="#E50914" android:pathData="M24,24h60v60h-60z"/>
+            <path android:fillColor="#FFFFFF" android:pathData="M32,32h10v10h-10z M66,32h10v10h-10z M32,66h10v10h-10z M66,66h10v10h-10z M46,46h16v16h-16z"/>
+        </vector>
+        EOF
+
+        cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+            <background android:drawable="@android:color/black" />
+            <foreground android:drawable="@drawable/ic_launcher_foreground" />
+        </adaptive-icon>
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/cinefinder/app/model/ReferenceMovie.kt
+        package com.cinefinder.app.model
+
+        data class ReferenceMovie(
+            val id: String,
+            val title: String,
+            val hash: Long,
+            val imagePath: String
+        )
+
+        data class MatchResult(
+            val movie: ReferenceMovie,
+            val similarityPercentage: Double
+        )
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/cinefinder/app/processing/ImageHasher.kt
+        package com.cinefinder.app.processing
+
+        import android.graphics.Bitmap
+        import android.graphics.Color
+
+        object ImageHasher {
+            fun computeDHash(bitmap: Bitmap): Long {
+                val scaled = Bitmap.createScaledBitmap(bitmap, 9, 8, true)
+                var hash = 0L
+                for (y in 0 until 8) {
+                    for (x in 0 until 8) {
+                        val leftPixel = scaled.getPixel(x, y)
+                        val rightPixel = scaled.getPixel(x + 1, y)
+                        val leftBrightness = getLuminance(leftPixel)
+                        val rightBrightness = getLuminance(rightPixel)
+                        if (leftBrightness > rightBrightness) {
+                            hash = hash or (1L shl (y * 8 + x))
+                        }
+                    }
+                }
+                return hash
+            }
+
+            private fun getLuminance(pixel: Int): Int {
+                val r = Color.red(pixel)
+                val g = Color.green(pixel)
+                val b = Color.blue(pixel)
+                return (0.299 * r + 0.587 * g + 0.114 * b).toInt()
+            }
+
+            fun calculateSimilarity(hash1: Long, hash2: Long): Double {
+                val xor = hash1 xor hash2
+                val hammingDistance = java.lang.Long.bitCount(xor)
+                return ((64.0 - hammingDistance) / 64.0 * 100.0).coerceIn(0.0, 100.0)
+            }
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/cinefinder/app/model/ReferenceRepository.kt
+        package com.cinefinder.app.model
+
+        import android.content.Context
+        import android.graphics.Bitmap
+        import com.cinefinder.app.processing.ImageHasher
+        import kotlinx.coroutines.Dispatchers
+        import kotlinx.coroutines.withContext
+        import java.io.File
+        import java.io.FileOutputStream
+        import java.util.UUID
+
+        class ReferenceRepository(private val context: Context) {
+            private val indexFile = File(context.filesDir, "references_index.txt")
+
+            suspend fun getReferences(): List<ReferenceMovie> = withContext(Dispatchers.IO) {
+                if (!indexFile.exists()) return@withContext emptyList()
+                val list = mutableListOf<ReferenceMovie>()
+                indexFile.readLines().forEach { line ->
+                    val parts = line.split("|")
+                    if (parts.size >= 4) {
+                        list.add(
+                            ReferenceMovie(
+                                id = parts[0],
+                                title = parts[1],
+                                hash = parts[2].toLongOrNull() ?: 0L,
+                                imagePath = parts[3]
+                            )
+                        )
+                    }
+                }
+                list
+            }
+
+            suspend fun addReference(title: String, bitmap: Bitmap): ReferenceMovie = withContext(Dispatchers.IO) {
+                val id = UUID.randomUUID().toString()
+                val hash = ImageHasher.computeDHash(bitmap)
+                val file = File(context.filesDir, "ref_$id.jpg")
+                FileOutputStream(file).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)
+                }
+                val item = ReferenceMovie(id, title, hash, file.absolutePath)
+                indexFile.appendText("${item.id}|${item.title}|${item.hash}|${item.imagePath}\n")
+                item
+            }
+
+            suspend fun removeReference(id: String) = withContext(Dispatchers.IO) {
+                val current = getReferences()
+                val remaining = current.filter { it.id != id }
+                val toDelete = current.find { it.id == id }
+                toDelete?.let { File(it.imagePath).delete() }
+                indexFile.writeText("")
+                remaining.forEach { item ->
+                    indexFile.appendText("${item.id}|${item.title}|${item.hash}|${item.imagePath}\n")
+                }
+            }
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/cinefinder/app/processing/VideoAnalyzer.kt
+        package com.cinefinder.app.processing
+
+        import android.content.Context
+        import android.media.MediaMetadataRetriever
+        import android.net.Uri
+        import com.cinefinder.app.model.MatchResult
+        import com.cinefinder.app.model.ReferenceMovie
+        import kotlinx.coroutines.Dispatchers
+        import kotlinx.coroutines.withContext
+
+        object VideoAnalyzer {
+            suspend fun analyzeVideo(
+                context: Context,
+                videoUri: Uri,
+                references: List<ReferenceMovie>,
+                onProgress: (Float, String) -> Unit
+            ): List<MatchResult> = withContext(Dispatchers.IO) {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    context.contentResolver.openFileDescriptor(videoUri, "r")?.use { pfd ->
+                        retriever.setDataSource(pfd.fileDescriptor)
+                    } ?: throw IllegalStateException("Não foi possível aceder ao vídeo.")
+
+                    val durationMs = retriever.extractMetadata(
+                        MediaMetadataRetriever.METADATA_KEY_DURATION
+                    )?.toLongOrNull() ?: 0L
+
+                    if (durationMs <= 0L) throw IllegalStateException("Duração inválida ou formato incompatível.")
+
+                    val samplePoints = 10
+                    val interval = durationMs * 1000L / (samplePoints + 1)
+                    val extractedHashes = mutableListOf<Long>()
+
+                    for (i in 1..samplePoints) {
+                        val timeUs = i * interval
+                        val frameBitmap = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        if (frameBitmap != null) {
+                            extractedHashes.add(ImageHasher.computeDHash(frameBitmap))
+                        }
+                        onProgress((i.toFloat() / samplePoints.toFloat()) * 0.7f, "A analisar fotograma $i de $samplePoints...")
+                    }
+
+                    onProgress(0.85f, "A comparar fotogramas com referências...")
+                    val results = references.map { ref ->
+                        val bestScore = extractedHashes.maxOfOrNull { frameHash ->
+                            ImageHasher.calculateSimilarity(ref.hash, frameHash)
+                        } ?: 0.0
+                        MatchResult(movie = ref, similarityPercentage = bestScore)
+                    }.sortedByDescending { it.similarityPercentage }
+
+                    onProgress(1.0f, "Concluído!")
+                    results
+                } finally {
+                    retriever.release()
+                }
+            }
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/cinefinder/app/ui/theme/Theme.kt
+        package com.cinefinder.app.ui.theme
+
+        import androidx.compose.material3.MaterialTheme
+        import androidx.compose.material3.darkColorScheme
+        import androidx.compose.runtime.Composable
+        import androidx.compose.ui.graphics.Color
+
+        private val DarkColorScheme = darkColorScheme(
+            primary = Color(0xFFE50914),
+            secondary = Color(0xFFB81D24),
+            background = Color(0xFF141414),
+            surface = Color(0xFF1F1F1F),
+            onPrimary = Color.White,
+            onBackground = Color.White,
+            onSurface = Color.White
+        )
+
+        @Composable
+        fun CineFinderTheme(content: @Composable () -> Unit) {
+            MaterialTheme(colorScheme = DarkColorScheme, content = content)
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/cinefinder/app/ui/CineFinderScreen.kt
+        package com.cinefinder.app.ui
+
+        import android.graphics.BitmapFactory
+        import android.net.Uri
+        import androidx.activity.compose.rememberLauncherForActivityResult
+        import androidx.activity.result.contract.ActivityResultContracts
+        import androidx.compose.animation.AnimatedVisibility
+        import androidx.compose.foundation.Image
+        import androidx.compose.foundation.layout.*
+        import androidx.compose.foundation.lazy.LazyColumn
+        import androidx.compose.foundation.lazy.items
+        import androidx.compose.foundation.shape.RoundedCornerShape
+        import androidx.compose.material.icons.Icons
+        import androidx.compose.material.icons.filled.Add
+        import androidx.compose.material.icons.filled.Delete
+        import androidx.compose.material.icons.filled.Movie
+        import androidx.compose.material.icons.filled.VideoFile
+        import androidx.compose.material3.*
+        import androidx.compose.runtime.*
+        import androidx.compose.ui.Alignment
+        import androidx.compose.ui.Modifier
+        import androidx.compose.ui.draw.clip
+        import androidx.compose.ui.graphics.asImageBitmap
+        import androidx.compose.ui.platform.LocalContext
+        import androidx.compose.ui.text.font.FontWeight
+        import androidx.compose.ui.unit.dp
+        import com.cinefinder.app.model.MatchResult
+        import com.cinefinder.app.model.ReferenceMovie
+        import com.cinefinder.app.model.ReferenceRepository
+        import com.cinefinder.app.processing.VideoAnalyzer
+        import kotlinx.coroutines.launch
+        import java.util.Locale
+
+        @OptIn(ExperimentalMaterial3Api::class)
+        @Composable
+        fun CineFinderScreen() {
+            val context = LocalContext.current
+            val repository = remember { ReferenceRepository(context) }
+            val scope = rememberCoroutineScope()
+
+            var selectedTab by remember { mutableIntStateOf(0) }
+            var references by remember { mutableStateOf<List<ReferenceMovie>>(emptyList()) }
+            var matchResults by remember { mutableStateOf<List<MatchResult>>(emptyList()) }
+            var isProcessing by remember { mutableStateOf(false) }
+            var progressValue by remember { mutableFloatStateOf(0f) }
+            var progressStatus by remember { mutableStateOf("") }
+            var errorMessage by remember { mutableStateOf<String?>(null) }
+            var showAddDialog by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) { references = repository.getReferences() }
+
+            val videoPickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.GetContent()
+            ) { uri: Uri? ->
+                if (uri != null) {
+                    if (references.isEmpty()) {
+                        errorMessage = "Adiciona primeiro fotogramas à base de referências."
+                        return@rememberLauncherForActivityResult
+                    }
+                    isProcessing = true
+                    errorMessage = null
+                    matchResults = emptyList()
+
+                    scope.launch {
+                        try {
+                            matchResults = VideoAnalyzer.analyzeVideo(
+                                context = context,
+                                videoUri = uri,
+                                references = references,
+                                onProgress = { p, status ->
+                                    progressValue = p
+                                    progressStatus = status
+                                }
+                            )
+                        } catch (e: Exception) {
+                            errorMessage = "Erro no processamento: ${e.localizedMessage ?: "Falha ao ler vídeo."}"
+                        } finally {
+                            isProcessing = false
+                        }
+                    }
+                }
+            }
+
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("CineFinder", fontWeight = FontWeight.Bold) },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            titleContentColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+                },
+                bottomBar = {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                        NavigationBarItem(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            icon = { Icon(Icons.Default.VideoFile, null) },
+                            label = { Text("Análise") }
+                        )
+                        NavigationBarItem(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            icon = { Icon(Icons.Default.Movie, null) },
+                            label = { Text("Referências") }
+                        )
+                    }
+                }
+            ) { padding ->
+                Box(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+                    if (selectedTab == 0) {
+                        Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Button(
+                                onClick = { videoPickerLauncher.launch("video/*") },
+                                enabled = !isProcessing,
+                                modifier = Modifier.fillMaxWidth().height(56.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.VideoFile, null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Seleccionar Vídeo do Telemóvel")
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            AnimatedVisibility(visible = isProcessing) {
+                                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                                    Column(modifier = Modifier.padding(16.dp)) {
+                                        Text(progressStatus)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        LinearProgressIndicator(progress = { progressValue }, modifier = Modifier.fillMaxWidth())
+                                    }
+                                }
+                            }
+
+                            errorMessage?.let { error ->
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), modifier = Modifier.fillMaxWidth()) {
+                                    Text(text = error, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(12.dp))
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            if (matchResults.isNotEmpty()) {
+                                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                    items(matchResults) { result ->
+                                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                                            Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                val bitmap = remember(result.movie.imagePath) { BitmapFactory.decodeFile(result.movie.imagePath) }
+                                                if (bitmap != null) {
+                                                    Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)))
+                                                }
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                                Column {
+                                                    Text(result.movie.title, fontWeight = FontWeight.Bold)
+                                                    Text(String.format(Locale.getDefault(), "Semelhança: %.1f%%", result.similarityPercentage), color = MaterialTheme.colorScheme.primary)
+                                                }
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Button(onClick = { showAddDialog = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                                Icon(Icons.Default.Add, null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Adicionar Referência")
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                items(references) { item ->
+                                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                                        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            val bitmap = remember(item.imagePath) { BitmapFactory.decodeFile(item.imagePath) }
+                                            if (bitmap != null) {
+                                                Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp)))
+                                            }
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Text(item.title, modifier = Modifier.weight(1f))
+                                            IconButton(onClick = { scope.launch { repository.removeReference(item.id); references = repository.getReferences() } }) {
+                                                Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (showAddDialog) {
+                var title by remember { mutableStateOf("") }
+                var selectedUri by remember { mutableStateOf<Uri?>(null) }
+                val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { selectedUri = it }
+
+                AlertDialog(
+                    onDismissRequest = { showAddDialog = false },
+                    title = { Text("Adicionar Referência") },
+                    text = {
+                        Column {
+                            OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Título") }, modifier = Modifier.fillMaxWidth())
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(onClick = { imagePicker.launch("image/*") }, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (selectedUri != null) "Imagem Escolhida ✓" else "Escolher Imagem")
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(
+                            enabled = title.isNotBlank() && selectedUri != null,
+                            onClick = {
+                                scope.launch {
+                                    context.contentResolver.openInputStream(selectedUri!!)?.use {
+                                        val b = BitmapFactory.decodeStream(it)
+                                        if (b != null) { repository.addReference(title, b); references = repository.getReferences() }
+                                    }
+                                    showAddDialog = false
+                                }
+                            }
+                        ) { Text("Guardar") }
+                    },
+                    dismissButton = { TextButton(onClick = { showAddDialog = false }) { Text("Cancelar") } }
+                )
+            }
+        }
+        EOF
+
+        cat << 'EOF' > app/src/main/java/com/cinefinder/app/MainActivity.kt
+        package com.cinefinder.app
+
+        import android.os.Bundle
+        import androidx.activity.ComponentActivity
+        import androidx.activity.compose.setContent
+        import com.cinefinder.app.ui.CineFinderScreen
+        import com.cinefinder.app.ui.theme.CineFinderTheme
+
+        class MainActivity : ComponentActivity() {
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+                setContent {
+                    CineFinderTheme {
+                        CineFinderScreen()
+                    }
+                }
+            }
+        }
+        EOF
+
+    - name: Configurar Gradle Wrapper
+      run: |
+        gradle wrapper
+        chmod +x gradlew
+
+    - name: Compilar APK de Teste
+      run: ./gradlew assembleDebug --stacktrace
+
+    - name: Disponibilizar APK para Transferência
+      uses: actions/upload-artifact@v4
+      with:
+        name: CineFinder-APK
+        path: app/build/outputs/apk/debug/app-debug.apk
