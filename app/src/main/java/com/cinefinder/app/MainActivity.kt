@@ -1,41 +1,36 @@
 package com.cinefinder.app
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import com.google.android.material.bottomnavigation.BottomNavigationView
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import com.cinefinder.app.ui.CrashLog
+import com.cinefinder.app.ui.Incoming
+import com.cinefinder.app.v3.CfTheme
+import com.cinefinder.app.v3.CineFinderV3
 
-class MainActivity : AppCompatActivity() {
+@Suppress("DEPRECATION")
+private fun streamUri(i: Intent): Uri? =
+    if (Build.VERSION.SDK_INT >= 33) {
+        i.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+    } else {
+        i.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+    }
 
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-
-        val bottomNav = findViewById<BottomNavigationView>(R.id.bottomNavigation)
-        
-        bottomNav.setOnItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_home -> {
-                    Toast.makeText(this, "Início selecionado", Toast.LENGTH_SHORT).show()
-                    true
-                }
-                R.id.nav_categories -> {
-                    Toast.makeText(this, "Categorias selecionadas", Toast.LENGTH_SHORT).show()
-                    true
-                }
-                R.id.nav_identify -> {
-                    Toast.makeText(this, "Identificar selecionado", Toast.LENGTH_SHORT).show()
-                    true
-                }
-                R.id.nav_explore -> {
-                    Toast.makeText(this, "Explorar selecionado", Toast.LENGTH_SHORT).show()
-                    true
-                }
-                R.id.nav_account -> {
-                    Toast.makeText(this, "Conta selecionada", Toast.LENGTH_SHORT).show()
-                    true
-                }
-                else -> false
+        CrashLog.install(this)
+        val i = intent
+        if (i != null && i.action == Intent.ACTION_SEND) {
+            val uri = streamUri(i)
+            if (uri != null) Incoming.uri = uri
+        }
+        setContent {
+            CfTheme {
+                CineFinderV3()
             }
         }
     }
